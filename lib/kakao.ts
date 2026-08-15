@@ -5,7 +5,7 @@
  */
 
 import axios from 'axios'
-import { getUsersToNotify, recordNotification } from './db'
+import { getUsersToNotify, recordNotification, upsertUser } from './db'
 import { DisclosureRecord } from '@/types'
 
 const KAKAO_API_BASE = 'https://kapi.kakao.com'
@@ -186,7 +186,7 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
 }): Promise<number> {
   if (!disclosure.sentiment || !disclosure.score) return 0
 
-  const users = getUsersToNotify({
+  const users = await getUsersToNotify({
     rcept_no: disclosure.rcept_no,
     corp_code: disclosure.corp_code,
     sentiment: disclosure.sentiment,
@@ -212,7 +212,7 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
       })
 
       if (success) {
-        recordNotification(user.id, disclosure.rcept_no, 'sent')
+        await recordNotification(user.id, disclosure.rcept_no, 'sent')
         sent++
       } else {
         // 토큰 만료 시 리프레시 시도
@@ -220,11 +220,11 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
           const newToken = await refreshKakaoToken(user.kakao_refresh_token)
           if (newToken) {
             // DB에 새 토큰 저장
-            const { getDb } = await import('./db')
-            // @ts-ignore
-            ;(getDb as any)().prepare(
-              'UPDATE users SET kakao_access_token = ? WHERE id = ?'
-            ).run(newToken, user.id)
+            await upsertUser({
+              kakao_id: user.kakao_id,
+              nickname: user.nickname,
+              kakao_access_token: newToken,
+            })
 
             // 재시도
             const retrySuccess = await sendKakaoMessage(newToken, {
@@ -238,7 +238,7 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
               rcept_dt: disclosure.rcept_dt,
             })
             if (retrySuccess) {
-              recordNotification(user.id, disclosure.rcept_no, 'sent')
+              await recordNotification(user.id, disclosure.rcept_no, 'sent')
               sent++
             }
           }
