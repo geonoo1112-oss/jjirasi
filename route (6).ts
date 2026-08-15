@@ -9,12 +9,13 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || undefined
   const limit = parseInt(searchParams.get('limit') || '50')
   const offset = parseInt(searchParams.get('offset') || '0')
+  const dateFrom = searchParams.get('date_from') || undefined
+  const dateTo = searchParams.get('date_to') || undefined
 
   try {
-    const [disclosures, stats] = await Promise.all([
-      queryDisclosures({ sentiment, corpCode, search, limit, offset }),
-      getStats(),
-    ])
+    const disclosures = queryDisclosures({ sentiment, corpCode, search, limit, offset, dateFrom, dateTo })
+    const stats = getStats()
+
     return NextResponse.json({ disclosures, stats })
   } catch (error) {
     console.error('공시 조회 오류:', error)

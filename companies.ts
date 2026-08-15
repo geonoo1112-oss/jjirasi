@@ -6,7 +6,7 @@
 
 import axios from 'axios'
 import { parseStringPromise } from 'xml2js'
-import { upsertCompany, updateCompanyByStockCode } from './db'
+import { upsertCompany, updateMarketCap } from './db'
 
 /**
  * DART API에서 전체 기업 코드 목록 다운로드
@@ -41,11 +41,11 @@ export async function importAllCompanies(): Promise<number> {
       // 상장된 기업만 (stock_code가 있는 기업)
       if (!stockCode) continue
 
-      await upsertCompany({
+      upsertCompany({
         corp_code: corp.corp_code[0],
         corp_name: corp.corp_name[0],
         stock_code: stockCode,
-        market: 'OTHER',
+        market: 'OTHER', // 시장 구분은 KRX에서 별도로 가져옴
       })
       count++
     }
@@ -119,12 +119,21 @@ async function fetchKrxMarketData(marketCode: 'STK' | 'KSQ'): Promise<void> {
       if (cols.length < 5) continue
 
       const stockCode = cols[0]?.trim().replace(/"/g, '')
+      const corpName = cols[1]?.trim().replace(/"/g, '')
       const marketCapStr = cols[4]?.trim().replace(/"/g, '').replace(/,/g, '')
       const marketCap = parseFloat(marketCapStr) / 100000000 // 원 → 억원
 
       if (!stockCode || !marketCap) continue
 
-      await updateCompanyByStockCode(stockCode, marketName, marketCap)
+      // stock_code로 기업 찾아서 시가총액 + 시장 업데이트
+      const { getDb } = await import('./db')
+      // @ts-ignore
+      const db = (getDb as any)()
+      const company = db.prepare('SELECT corp_code FROM companies WHERE stock_code = ?').get(stockCode)
+      if (company) {
+        db.prepare('UPDATE companies SET market_cap = ?, market = ? WHERE corp_code = ?')
+          .run(marketCap, marketName, company.corp_code)
+      }
     }
 
     console.log(`[Companies] ${marketName} 시가총액 업데이트 완료`)

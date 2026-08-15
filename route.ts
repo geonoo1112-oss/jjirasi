@@ -7,9 +7,12 @@ export async function GET(request: NextRequest) {
   const minCap = parseFloat(searchParams.get('min_cap') || '0')
 
   try {
-    const companies = query
-      ? await searchCompanies(query, 20)
-      : await getCompaniesByMarketCap(minCap, 100)
+    let companies
+    if (query) {
+      companies = searchCompanies(query, 20)
+    } else {
+      companies = getCompaniesByMarketCap(minCap, 100)
+    }
     return NextResponse.json({ companies })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })

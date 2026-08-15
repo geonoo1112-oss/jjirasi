@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { getKakaoToken, getKakaoUserInfo } from '@/lib/kakao'
 import { upsertUser } from '@/lib/db'
 
+// 카카오 OAuth 콜백 처리
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
@@ -13,11 +14,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // 인가 코드 → 액세스 토큰
     const tokenData = await getKakaoToken(code)
+
+    // 사용자 정보 조회
     const userInfo = await getKakaoUserInfo(tokenData.access_token)
 
+    // DB에 저장 / 업데이트
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-    const userId = await upsertUser({
+    const userId = upsertUser({
       kakao_id: userInfo.id,
       nickname: userInfo.nickname,
       email: userInfo.email,
@@ -26,12 +31,13 @@ export async function GET(request: NextRequest) {
       token_expires_at: expiresAt,
     })
 
+    // 세션 쿠키 설정 (간단한 세션 관리)
     const cookieStore = cookies()
     cookieStore.set('user_id', String(userId), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: 60 * 60 * 24 * 30, // 30일
     })
 
     return NextResponse.redirect(new URL('/settings?login=success', request.url))

@@ -10,7 +10,7 @@ function getUserId(): number | null {
 export async function GET() {
   const userId = getUserId()
   if (!userId) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
-  const user = await getUserById(userId)
+  const user = getUserById(userId)
   return NextResponse.json({ user })
 }
 
@@ -19,7 +19,7 @@ export async function PATCH(request: NextRequest) {
   if (!userId) return NextResponse.json({ error: '로그인 필요' }, { status: 401 })
 
   const body = await request.json()
-  await updateUserSettings(userId, {
+  updateUserSettings(userId, {
     notify_positive: body.notify_positive,
     notify_negative: body.notify_negative,
     notify_neutral: body.notify_neutral,
