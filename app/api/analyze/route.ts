@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     if (rceptNo) {
       // 특정 공시 재분석
-      const disclosures = queryDisclosures({ limit: 1 })
+      const disclosures = await queryDisclosures({ limit: 1 })
       const target = disclosures.find(d => d.rcept_no === rceptNo)
 
       if (!target) {
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         fullText: target.full_text,
       })
 
-      updateAnalysis(rceptNo, result)
+      await updateAnalysis(rceptNo, result)
       return NextResponse.json({ success: true, analysis: result })
     }
 
