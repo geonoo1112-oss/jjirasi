@@ -22,8 +22,25 @@ function clean(text: string | null): string | null {
   return text.replace(/\x00/g, '').replace(/[ ]/g, '')
 }
 
+// 콜드 스타트당 한 번만 컬럼 마이그레이션 실행
+let migrationDone = false
+async function ensureColumns() {
+  if (migrationDone) return
+  try {
+    const sql = getSql()
+    await sql`ALTER TABLE disclosures ADD COLUMN IF NOT EXISTS reasoning TEXT`
+    await sql`ALTER TABLE disclosures ADD COLUMN IF NOT EXISTS affected_aspects TEXT`
+    await sql`ALTER TABLE disclosures ADD COLUMN IF NOT EXISTS corp_cls TEXT`
+    migrationDone = true
+  } catch {
+    // 마이그레이션 실패해도 분석은 계속 시도
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
+    await ensureColumns()
+
     const body = await request.json()
     const { rcept_no, corp_name, corp_code, stock_code, report_nm, rcept_dt, corp_cls } = body
 
