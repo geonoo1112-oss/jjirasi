@@ -96,7 +96,9 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
   const [error, setError] = useState<string | null>(null)
   const [expandedRcept, setExpandedRcept] = useState<string | null>(null)
   const [analyzing, setAnalyzing] = useState<Set<string>>(new Set())
+  const analyzingRef = useRef<Set<string>>(new Set())
   const [localAnalysis, setLocalAnalysis] = useState<Record<string, any>>({})
+  const [analyzeError, setAnalyzeError] = useState<Record<string, string>>({})
 
   const fetchHistory = useCallback(async (m: number) => {
     setLoading(true); setError(null)
@@ -121,8 +123,11 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
   }, [onClose])
 
   async function handleAnalyze(d: CompanyDisclosure) {
-    if (analyzing.has(d.rcept_no)) return
-    setAnalyzing(prev => new Set(Array.from(prev).concat(d.rcept_no)))
+    // useRef로 체크 → stale closure 문제 없이 항상 최신 상태 참조
+    if (analyzingRef.current.has(d.rcept_no)) return
+    analyzingRef.current.add(d.rcept_no)
+    setAnalyzing(new Set(analyzingRef.current))
+    setAnalyzeError(prev => { const s = { ...prev }; delete s[d.rcept_no]; return s })
     try {
       const res = await fetch('/api/disclosure-analyze', {
         method: 'POST',
@@ -140,10 +145,15 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
       const data = await res.json()
       if (data.success) {
         setLocalAnalysis(prev => ({ ...prev, [d.rcept_no]: data.analysis }))
+      } else {
+        setAnalyzeError(prev => ({ ...prev, [d.rcept_no]: data.error || '분석 실패' }))
       }
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      setAnalyzeError(prev => ({ ...prev, [d.rcept_no]: e?.message || '네트워크 오류' }))
+    }
     finally {
-      setAnalyzing(prev => { const s = new Set(prev); s.delete(d.rcept_no); return s })
+      analyzingRef.current.delete(d.rcept_no)
+      setAnalyzing(new Set(analyzingRef.current))
     }
   }
 
@@ -204,6 +214,7 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
               {disclosures.map(d => {
                 const analysis = localAnalysis[d.rcept_no] || (d.analyzed ? { sentiment: d.sentiment, score: d.score, summary: d.summary } : null)
                 const isAnalyzing = analyzing.has(d.rcept_no)
+                const errMsg = analyzeError[d.rcept_no]
 
                 return (
                   <div key={d.rcept_no} className="px-5 py-3 hover:bg-slate-50 transition-colors">
@@ -228,6 +239,15 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
                       <div className="flex items-center gap-1.5 shrink-0">
                         {analysis?.sentiment ? (
                           <SentimentBadge sentiment={analysis.sentiment} score={analysis.score} />
+                        ) : errMsg ? (
+                          <button
+                            onClick={() => handleAnalyze(d)}
+                            title={errMsg}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+                          >
+                            <AlertCircle size={9} />
+                            재시도
+                          </button>
                         ) : (
                           <button
                             onClick={() => handleAnalyze(d)}

@@ -119,8 +119,10 @@ export async function runPipeline() {
   if (isPolling) return { fetched: 0, analyzed: 0, notified: 0 }
   isPolling = true
   try {
+    // pollAndAnalyze: 새 공시 수집 + 즉시 분석
+    // analyzeAllPending은 제거 → "지금 수집" 버튼으로 기존 pending 공시가
+    // 한꺼번에 분석되는 문제 방지 (cron에서만 실행)
     const result = await pollAndAnalyze()
-    await analyzeAllPending()
     return result
   } finally {
     isPolling = false
