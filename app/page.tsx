@@ -312,7 +312,7 @@ function CompanySearchBox({
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder={allCompanies.length > 0 ? '기업명·종목코드·초성 검색 (예: ㅅㅅㅈㅈ)' : '기업명 또는 공시명 검색...'}
+              placeholder={allCompanies.length > 0 ? '기업명·종목코드·초성 검색' : '기업명 또는 공시명 검색...'}
               value={input}
               onChange={e => { setInput(e.target.value); setShowSuggestions(true) }}
               onFocus={() => input.trim() && setShowSuggestions(true)}
