@@ -322,10 +322,10 @@ function HomeContent() {
               {!userLoading && (
                 user ? (
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <a href="/settings" className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors cursor-pointer">
                       <Bell size={13} className="text-yellow-600" />
                       <span className="text-xs font-medium text-slate-700 hidden sm:block">{user.nickname}</span>
-                    </div>
+                    </a>
                     <button
                       onClick={handleLogout}
                       className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
