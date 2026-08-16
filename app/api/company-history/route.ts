@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { fetchDisclosures, getDartUrl } from '@/lib/dart'
+import axios from 'axios'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -19,6 +20,53 @@ function getDateRange(months: number): { bgn_de: string; end_de: string } {
     return `${y}${m}${dd}`
   }
   return { bgn_de: fmt(start), end_de: fmt(end) }
+}
+
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * DART API에서 최근 공시를 검색해 기업명으로 corp_code 찾기
+ * (companies 테이블이 비어있을 때 폴백)
+ */
+async function discoverCorpCodeFromDart(name: string): Promise<{ corp_code: string; corp_name: string; stock_code: string } | null> {
+  const apiKey = process.env.DART_API_KEY
+  if (!apiKey) return null
+
+  const end = new Date()
+  const start = new Date()
+  start.setMonth(start.getMonth() - 1) // 최근 1개월 내 공시에서 검색
+
+  try {
+    // 최근 공시 최대 200건 가져와서 기업명 매칭
+    const [r1, r2] = await Promise.allSettled([
+      axios.get('https://opendart.fss.or.kr/api/list.json', {
+        params: { crtfc_key: apiKey, bgn_de: fmtDate(start), end_de: fmtDate(end), page_no: 1, page_count: 100, sort: 'date', sort_mth: 'desc' },
+      }),
+      axios.get('https://opendart.fss.or.kr/api/list.json', {
+        params: { crtfc_key: apiKey, bgn_de: fmtDate(start), end_de: fmtDate(end), page_no: 2, page_count: 100, sort: 'date', sort_mth: 'desc' },
+      }),
+    ])
+
+    const list: any[] = [
+      ...(r1.status === 'fulfilled' && r1.value.data.status === '000' ? r1.value.data.list : []),
+      ...(r2.status === 'fulfilled' && r2.value.data.status === '000' ? r2.value.data.list : []),
+    ]
+
+    // 정확한 이름 매칭 우선, 없으면 부분 매칭
+    const exact = list.find((d: any) => d.corp_name === name)
+    const partial = list.find((d: any) => d.corp_name?.includes(name) || name.includes(d.corp_name))
+    const match = exact || partial
+
+    if (match) {
+      return { corp_code: match.corp_code, corp_name: match.corp_name, stock_code: match.stock_code || '' }
+    }
+  } catch {
+    // 무시
+  }
+
+  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -68,8 +116,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 3. 두 테이블 모두 없으면 DART API 최근 공시에서 corp_code 자동 탐색
+    if (!corpCode && name) {
+      const found = await discoverCorpCodeFromDart(name)
+      if (found) {
+        corpCode = found.corp_code
+        companyName = found.corp_name
+        stockCode = found.stock_code
+      }
+    }
+
     if (!corpCode) {
-      return NextResponse.json({ error: '회사를 찾을 수 없습니다. 먼저 기업 데이터를 가져오세요.' }, { status: 404 })
+      return NextResponse.json({
+        error: `"${name}" 기업을 찾을 수 없습니다. 최근 1개월 내 DART 공시가 없거나 기업명을 확인해주세요.`
+      }, { status: 404 })
     }
 
     // 3. DART API에서 해당 기업의 공시 목록 가져오기
