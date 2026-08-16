@@ -122,7 +122,7 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
 
   async function handleAnalyze(d: CompanyDisclosure) {
     if (analyzing.has(d.rcept_no)) return
-    setAnalyzing(prev => new Set([...prev, d.rcept_no]))
+    setAnalyzing(prev => new Set(Array.from(prev).concat(d.rcept_no)))
     try {
       const res = await fetch('/api/disclosure-analyze', {
         method: 'POST',
