@@ -135,17 +135,16 @@ export async function GET(request: NextRequest) {
     // 3. DART API에서 해당 기업의 공시 목록 가져오기
     const { bgn_de, end_de } = getDateRange(months)
 
-    const [page1, page2, page3] = await Promise.allSettled([
-      fetchDisclosures({ corpCode, startDate: bgn_de, endDate: end_de, page: 1, pageCount: 100 }),
-      fetchDisclosures({ corpCode, startDate: bgn_de, endDate: end_de, page: 2, pageCount: 100 }),
-      fetchDisclosures({ corpCode, startDate: bgn_de, endDate: end_de, page: 3, pageCount: 100 }),
-    ])
+    // 기업별 조회는 page 1만 (최대 100건) - 다중 페이지 시 DART가 동일 데이터를 반복 반환하는 버그 방지
+    const page1Result = await fetchDisclosures({ corpCode, startDate: bgn_de, endDate: end_de, page: 1, pageCount: 100 })
 
-    const dartDisclosures = [
-      ...(page1.status === 'fulfilled' ? page1.value : []),
-      ...(page2.status === 'fulfilled' ? page2.value : []),
-      ...(page3.status === 'fulfilled' ? page3.value : []),
-    ]
+    // rcept_no 기준 중복 제거 (DART API 응답 중복 방어)
+    const seenRceptNo = new Set<string>()
+    const dartDisclosures = page1Result.filter(d => {
+      if (seenRceptNo.has(d.rcept_no)) return false
+      seenRceptNo.add(d.rcept_no)
+      return true
+    })
 
     // 4. 로컬 DB의 분석 결과 가져오기
     const localRows = await sql`
