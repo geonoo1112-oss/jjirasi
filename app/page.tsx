@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { DisclosureView } from '@/types'
 import {
@@ -193,7 +193,7 @@ function StatCard({ label, value, color, icon: Icon }: {
   )
 }
 
-export default function Home() {
+function HomeContent() {
   const [disclosures, setDisclosures] = useState<DisclosureView[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -437,5 +437,13 @@ export default function Home() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <HomeContent />
+    </Suspense>
   )
 }
