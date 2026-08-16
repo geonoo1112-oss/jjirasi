@@ -21,7 +21,7 @@ export function getKakaoAuthUrl(state?: string): string {
     client_id: process.env.KAKAO_CLIENT_ID!,
     redirect_uri: process.env.KAKAO_REDIRECT_URI!,
     response_type: 'code',
-    scope: 'profile_nickname,account_email,talk_message',  // 카카오톡 메시지 전송 권한
+    scope: 'profile_nickname,talk_message',  // 카카오톡 메시지 전송 권한
     ...(state ? { state } : {}),
   })
   return `${KAKAO_AUTH_BASE}/oauth/authorize?${params}`
