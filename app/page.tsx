@@ -432,7 +432,7 @@ function HomeContent() {
 
         {/* 푸터 */}
         <div className="text-center text-xs text-slate-400 py-4 border-t border-slate-200">
-          <p>JJIRASI · 데이터 출처: 금융감독원 전자공시시스템(DART) · AI 분석: OpenAI</p>
+          <p>JJIRASI · 데이터 출처: 금융감독원 전자공시시스템(DART)</p>
           <p className="mt-1">본 분석은 참고용이며 투자 결정의 근거로 사용하지 마세요.</p>
         </div>
       </main>
