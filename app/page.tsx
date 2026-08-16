@@ -1,12 +1,19 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { DisclosureView } from '@/types'
 import {
   RefreshCw, TrendingUp, TrendingDown, Minus,
-  ExternalLink, Search, Filter, BarChart3,
-  AlertCircle, CheckCircle, Clock
+  ExternalLink, Search, BarChart3,
+  AlertCircle, CheckCircle, Clock, LogOut, Bell
 } from 'lucide-react'
+
+interface UserInfo {
+  id: number
+  nickname: string
+  email?: string
+}
 
 interface Stats {
   total: number
@@ -196,6 +203,33 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [user, setUser] = useState<UserInfo | null>(null)
+  const [userLoading, setUserLoading] = useState(true)
+  const searchParams = useSearchParams()
+
+  // 로그인 상태 확인
+  useEffect(() => {
+    fetch('/api/user/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.user) setUser(data.user)
+      })
+      .finally(() => setUserLoading(false))
+  }, [])
+
+  // URL 파라미터로 로그인 성공/실패 메시지
+  useEffect(() => {
+    const loginParam = searchParams.get('login')
+    const errorParam = searchParams.get('error')
+    if (loginParam === 'success') showMessage('success', '카카오 로그인 성공! 이제 알림을 받을 수 있어요 🎉')
+    if (errorParam) showMessage('error', '로그인에 실패했습니다. 다시 시도해주세요.')
+  }, [searchParams])
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    setUser(null)
+    showMessage('success', '로그아웃 되었습니다')
+  }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -283,6 +317,34 @@ export default function Home() {
                 <RefreshCw size={14} className={polling ? 'animate-spin' : ''} />
                 {polling ? '수집 중...' : '지금 수집'}
               </button>
+
+              {/* 카카오 로그인 / 사용자 정보 */}
+              {!userLoading && (
+                user ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <Bell size={13} className="text-yellow-600" />
+                      <span className="text-xs font-medium text-slate-700 hidden sm:block">{user.nickname}</span>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="로그아웃"
+                    >
+                      <LogOut size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <a
+                    href="/api/auth/kakao"
+                    className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-500 text-slate-900 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <span>💬</span>
+                    <span className="hidden sm:block">카카오 알림 받기</span>
+                    <span className="sm:hidden">카카오</span>
+                  </a>
+                )
+              )}
             </div>
           </div>
         </div>
