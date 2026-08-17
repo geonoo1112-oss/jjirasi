@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2A3560"/>
+      <stop offset="100%" stop-color="#0F1523"/>
+    </linearGradient>
+  </defs>
+  <!-- 둥근 사각형 배경 -->
+  <rect width="200" height="200" rx="44" fill="url(#bg)"/>
+  <!-- 번개 본체 (빨간색) -->
+  <polygon points="72,18 114,18 91,92 118,92 80,184 50,184 75,92 58,92" fill="#D32F2F"/>
+  <!-- 흰색 하이라이트 — 상단 왼쪽 사선 -->
+  <polygon points="72,18 88,18 66,92 58,92" fill="white"/>
+  <!-- 흰색 하이라이트 — 하단 왼쪽 사선 -->
+  <polygon points="75,96 84,96 52,184 44,184" fill="white"/>
+</svg>

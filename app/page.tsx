@@ -421,7 +421,7 @@ function ScoreBar({ score }: { score: number | null }) {
   )
 }
 
-function DisclosureCard({ d, onCompanyClick }: { d: DisclosureView; onCompanyClick: (name: string, code: string) => void }) {
+function DisclosureCard({ d, onCompanyClick, compact = false }: { d: DisclosureView; onCompanyClick: (name: string, code: string) => void; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const config = d.sentiment ? SENTIMENT_CONFIG[d.sentiment] : null
   const Icon = config?.icon || Clock
@@ -493,12 +493,14 @@ function DisclosureCard({ d, onCompanyClick }: { d: DisclosureView; onCompanyCli
           </div>
         )}
 
-        <div className="mt-3 pt-2 border-t border-slate-100">
-          <button onClick={() => onCompanyClick(d.corp_name, d.corp_code)}
-            className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors">
-            <FileText size={11} />{d.corp_name} 공시 이력 전체 보기<ChevronRight size={11} />
-          </button>
-        </div>
+        {!compact && (
+          <div className="mt-3 pt-2 border-t border-slate-100">
+            <button onClick={() => onCompanyClick(d.corp_name, d.corp_code)}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors">
+              <FileText size={11} />{d.corp_name} 공시 이력 전체 보기<ChevronRight size={11} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -513,6 +515,161 @@ function StatCard({ label, value, color, icon: Icon }: { label: string; value: n
           <p className={`text-2xl font-bold mt-0.5 ${color}`}>{value.toLocaleString()}</p>
         </div>
         <Icon className={`${color} opacity-80`} size={24} />
+      </div>
+    </div>
+  )
+}
+
+// ─── 랭킹 타입 ───────────────────────────────────────────────
+
+interface RankingItem {
+  rank: number
+  corp_name: string
+  stock_code: string | null
+  total: number
+  positive_count: number
+  negative_count: number
+  neutral_count: number
+  dominant: 'positive' | 'negative' | 'neutral'
+}
+
+// ─── 인기 기업 랭킹 패널 ─────────────────────────────────────
+
+const RANK_MEDALS = ['🥇', '🥈', '🥉']
+const RANK_PERIODS = [
+  { key: 'today', label: '오늘 하루' },
+  { key: 'week',  label: '일주일' },
+  { key: 'month', label: '한달' },
+]
+
+function RankingPanel({ onCompanyClick }: { onCompanyClick: (name: string, code: string) => void }) {
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today')
+  const [rankings, setRankings] = useState<RankingItem[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const fetchRankings = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/rankings?period=${period}`)
+      const data = await res.json()
+      if (data.success) setRankings(data.rankings || [])
+    } catch {}
+    finally { setLoading(false) }
+  }, [period])
+
+  useEffect(() => { fetchRankings() }, [fetchRankings])
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* 헤더 */}
+      <div className="px-4 pt-3 pb-2 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-slate-900">🔥 분석 인기 기업 TOP 10</h3>
+          <button onClick={fetchRankings} disabled={loading}
+            className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+        {/* 기간 탭 */}
+        <div className="flex gap-1">
+          {RANK_PERIODS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key as any)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
+                period === p.key
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 랭킹 목록 */}
+      <div className="divide-y divide-slate-50">
+        {loading ? (
+          <div className="py-8 space-y-3 px-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 animate-pulse">
+                <div className="w-6 h-4 bg-slate-200 rounded" />
+                <div className="flex-1 space-y-1">
+                  <div className="h-3 bg-slate-200 rounded w-2/3" />
+                  <div className="h-2 bg-slate-100 rounded w-1/2" />
+                </div>
+                <div className="w-8 h-4 bg-slate-200 rounded" />
+              </div>
+            ))}
+          </div>
+        ) : rankings.length === 0 ? (
+          <div className="text-center py-10">
+            <BarChart3 size={28} className="mx-auto mb-2 text-slate-200" />
+            <p className="text-xs text-slate-400 font-medium">아직 분석 데이터가 없어요</p>
+            <p className="text-xs text-slate-300 mt-1">AI 분석 버튼을 눌러 시작해보세요</p>
+          </div>
+        ) : (
+          rankings.map(item => {
+            const dominantStyle =
+              item.dominant === 'positive' ? 'text-green-600 bg-green-50'
+              : item.dominant === 'negative' ? 'text-red-600 bg-red-50'
+              : 'text-slate-500 bg-slate-100'
+            const dominantLabel =
+              item.dominant === 'positive' ? '호재多'
+              : item.dominant === 'negative' ? '악재多'
+              : '중립多'
+
+            return (
+              <button
+                key={item.rank}
+                onClick={() => onCompanyClick(item.corp_name, item.stock_code || '')}
+                className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-slate-50 transition-colors text-left"
+              >
+                {/* 순위 */}
+                <span className="w-6 text-center shrink-0">
+                  {item.rank <= 3
+                    ? <span className="text-base">{RANK_MEDALS[item.rank - 1]}</span>
+                    : <span className="text-xs font-bold text-slate-400">{item.rank}</span>
+                  }
+                </span>
+
+                {/* 기업 정보 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-sm font-semibold text-slate-900 truncate">{item.corp_name}</span>
+                    {item.stock_code && (
+                      <span className="text-xs text-slate-400 font-mono shrink-0">{item.stock_code}</span>
+                    )}
+                  </div>
+                  {/* 감성 비율 바 */}
+                  {item.total > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden flex">
+                        <div className="bg-green-400 h-full transition-all"
+                          style={{ width: `${(item.positive_count / item.total) * 100}%` }} />
+                        <div className="bg-red-400 h-full transition-all"
+                          style={{ width: `${(item.negative_count / item.total) * 100}%` }} />
+                        <div className="bg-slate-300 h-full transition-all"
+                          style={{ width: `${(item.neutral_count / item.total) * 100}%` }} />
+                      </div>
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${dominantStyle}`}>
+                        {dominantLabel}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 분석 건수 */}
+                <span className="text-sm font-bold text-slate-700 shrink-0">{item.total}건</span>
+              </button>
+            )
+          })
+        )}
+      </div>
+
+      <div className="px-4 py-2 border-t border-slate-50 bg-slate-50/50">
+        <p className="text-xs text-slate-400 text-center">클릭하면 공시 이력을 볼 수 있어요</p>
       </div>
     </div>
   )
@@ -786,9 +943,12 @@ function HomeContent() {
         {/* 상단 로고 + 버튼 */}
         <div className="max-w-5xl mx-auto px-4 pt-3 pb-0">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">📰 JJIRASI</h1>
-              <p className="text-xs text-slate-500">DART 공시를 AI가 실시간 호재/악재 판단</p>
+            <div className="flex items-center gap-2.5">
+              <img src="/logo.svg" alt="JJIRASI" className="w-9 h-9 rounded-xl shadow-sm" />
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">JJIRASI</h1>
+                <p className="text-xs text-slate-500">DART 공시를 AI가 실시간 호재/악재 판단</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {lastUpdated && pageTab === 'global' && <span className="text-xs text-slate-400 hidden sm:block">{lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 갱신</span>}
@@ -921,20 +1081,30 @@ function HomeContent() {
               </div>
             )}
 
-            {/* 공시 목록 */}
-            {loading ? (
-              <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-white rounded-xl border border-gray-200 animate-pulse" />)}</div>
-            ) : disclosures.length === 0 && !search ? (
-              <div className="text-center py-20 text-slate-500">
-                <BarChart3 size={48} className="mx-auto mb-3 opacity-30" />
-                <p className="font-medium">공시가 없습니다</p>
-                <p className="text-sm mt-1">상단의 "지금 수집" 버튼을 눌러 DART에서 최신 공시를 가져오세요</p>
+            {/* 2컬럼 레이아웃: 왼쪽 공시 카드 / 오른쪽 랭킹 */}
+            <div className="flex flex-col lg:flex-row gap-4 items-start">
+              {/* 왼쪽: 공시 카드 목록 */}
+              <div className="flex-1 min-w-0 w-full">
+                {loading ? (
+                  <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-20 bg-white rounded-xl border border-gray-200 animate-pulse" />)}</div>
+                ) : disclosures.length === 0 && !search ? (
+                  <div className="text-center py-16 text-slate-500">
+                    <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
+                    <p className="font-medium text-sm">공시가 없습니다</p>
+                    <p className="text-xs mt-1">상단의 "지금 수집" 버튼을 눌러 최신 공시를 가져오세요</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {disclosures.map(d => <DisclosureCard key={d.rcept_no} d={d} onCompanyClick={openCompanyModal} compact />)}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-3">
-                {disclosures.map(d => <DisclosureCard key={d.rcept_no} d={d} onCompanyClick={openCompanyModal} />)}
+
+              {/* 오른쪽: 인기 기업 랭킹 (sticky) */}
+              <div className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-[88px]">
+                <RankingPanel onCompanyClick={openCompanyModal} />
               </div>
-            )}
+            </div>
           </>
         )}
 
