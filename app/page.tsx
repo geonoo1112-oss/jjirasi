@@ -1032,10 +1032,10 @@ function HomeContent() {
           <>
             {stats && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard label="오늘 공시" value={stats.todayCount} color="text-blue-600" icon={BarChart3} />
-                <StatCard label="호재" value={stats.positive} color="text-green-600" icon={TrendingUp} />
-                <StatCard label="악재" value={stats.negative} color="text-red-600" icon={TrendingDown} />
-                <StatCard label="분석 대기" value={stats.pending} color="text-amber-600" icon={Clock} />
+                <StatCard label="오늘 공시" value={stats.todayCount} color="text-slate-500" icon={BarChart3} />
+                <StatCard label="호재" value={stats.positive} color="text-red-600" icon={TrendingUp} />
+                <StatCard label="악재" value={stats.negative} color="text-blue-600" icon={TrendingDown} />
+                <StatCard label="분석 대기" value={stats.pending} color="text-slate-400" icon={Clock} />
               </div>
             )}
 
