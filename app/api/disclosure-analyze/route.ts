@@ -55,13 +55,18 @@ async function ensureSchema() {
 
 export async function POST(request: NextRequest) {
   try {
+    // OPENAI_API_KEY 미설정 시 즉시 명확한 에러 반환 (3회 타임아웃 방지)
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ success: false, error: 'AI 분석 서비스가 현재 설정되지 않았습니다. 관리자에게 문의하세요.' }, { status: 503 })
+    }
+
     await ensureSchema()
 
     const body = await request.json()
     const { rcept_no, corp_name, report_nm, rcept_dt, corp_cls } = body
 
     if (!rcept_no || !corp_name || !report_nm) {
-      return NextResponse.json({ error: '필수 파라미터 없음 (rcept_no, corp_name, report_nm)' }, { status: 400 })
+      return NextResponse.json({ success: false, error: '필수 파라미터 없음 (rcept_no, corp_name, report_nm)' }, { status: 400 })
     }
 
     // 로그인 유저 확인
@@ -139,8 +144,17 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, cached: false, analysis })
-  } catch (error) {
-    console.error('[DisclosureAnalyze]', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+  } catch (error: any) {
+    const msg = error?.message || String(error)
+    console.error('[DisclosureAnalyze]', msg)
+    // 인증 오류 → API 키 문제
+    if (msg.includes('401') || msg.includes('Incorrect API key') || msg.includes('invalid_api_key')) {
+      return NextResponse.json({ success: false, error: 'AI 분석 서비스 인증 오류입니다. API 키를 확인해주세요.' }, { status: 503 })
+    }
+    // 타임아웃
+    if (msg.includes('timeout') || msg.includes('timed out')) {
+      return NextResponse.json({ success: false, error: 'AI 분석 시간이 초과되었습니다. 잠시 후 재시도해주세요.' }, { status: 504 })
+    }
+    return NextResponse.json({ success: false, error: msg }, { status: 500 })
   }
 }

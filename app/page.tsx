@@ -20,6 +20,7 @@ interface CompanyDisclosure {
   report_nm: string; rcept_dt: string; flr_nm: string; dart_url: string
   sentiment: 'positive' | 'negative' | 'neutral' | null
   score: number | null; summary: string | null; key_points: string[]; analyzed: boolean
+  analyzed_by_user?: boolean  // 이 유저가 직접 분석한 경우에만 true
 }
 interface CompanyHistory {
   company: Company
@@ -212,7 +213,8 @@ function CompanyHistoryModal({ corpName, corpCode, onClose }: { corpName: string
           ) : (
             <div className="divide-y divide-slate-100">
               {disclosures.map(d => {
-                const analysis = localAnalysis[d.rcept_no] || (d.analyzed ? { sentiment: d.sentiment, score: d.score, summary: d.summary } : null)
+                // analyzed_by_user: 이 유저가 직접 분석한 결과만 표시 (폴러의 전체 공개 결과는 제외)
+                const analysis = localAnalysis[d.rcept_no] || (d.analyzed_by_user ? { sentiment: d.sentiment, score: d.score, summary: d.summary } : null)
                 const isAnalyzing = analyzing.has(d.rcept_no)
                 const errMsg = analyzeError[d.rcept_no]
 
