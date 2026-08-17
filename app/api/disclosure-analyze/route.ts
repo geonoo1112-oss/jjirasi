@@ -2,14 +2,17 @@
  * 단일 공시 온디맨드 AI 분석
  * - 폴러가 이미 분석한 결과(글로벌)가 있으면 캐시 반환
  * - 로그인 유저: 분석 결과를 user_analyses 테이블에 저장 (카카오 계정에만, 전체 공개 X)
+ *              분석 완료 시 본인에게 카카오톡 알림 전송
  * - 비로그인: 분석 결과 반환만 하고 저장 안 함
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { neon } from '@neondatabase/serverless'
 import { analyzeDisclosure } from '@/lib/analyzer'
-import { fetchDisclosureDetail } from '@/lib/dart'
-import { upsertUserAnalysis, getUserAnalyses } from '@/lib/db'
+import { fetchDisclosureDetail, getDartUrl } from '@/lib/dart'
+import { upsertUserAnalysis, getUserAnalyses, getUserById, updateAnalysis } from '@/lib/db'
+import { sendKakaoMessage, refreshKakaoToken } from '@/lib/kakao'
+import { AnalysisResult } from '@/types'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -47,9 +50,52 @@ async function ensureSchema() {
         UNIQUE(user_id, rcept_no)
       )
     `
+    // 개인 분석 메타 컬럼 추가 (처음 실행 시)
+    await sql`ALTER TABLE user_analyses ADD COLUMN IF NOT EXISTS corp_name TEXT`
+    await sql`ALTER TABLE user_analyses ADD COLUMN IF NOT EXISTS report_nm TEXT`
+    await sql`ALTER TABLE user_analyses ADD COLUMN IF NOT EXISTS rcept_dt TEXT`
+    await sql`ALTER TABLE user_analyses ADD COLUMN IF NOT EXISTS dart_url TEXT`
     migrationDone = true
   } catch {
     // 마이그레이션 실패해도 분석은 계속
+  }
+}
+
+/**
+ * 분석 완료 후 본인에게 카카오톡 알림 전송 (fire-and-forget)
+ */
+async function notifySelf(
+  userId: number,
+  disclosure: { corp_name: string; report_nm: string; rcept_dt: string; rcept_no: string },
+  analysis: AnalysisResult
+) {
+  try {
+    const user = await getUserById(userId)
+    if (!user?.kakao_access_token) return
+
+    const dartUrl = getDartUrl(disclosure.rcept_no)
+    const payload = {
+      corp_name: disclosure.corp_name,
+      report_nm: disclosure.report_nm,
+      sentiment: analysis.sentiment as 'positive' | 'negative' | 'neutral',
+      score: analysis.score,
+      summary: analysis.summary,
+      key_points: analysis.key_points,
+      dart_url: dartUrl,
+      rcept_dt: disclosure.rcept_dt,
+    }
+
+    const success = await sendKakaoMessage(user.kakao_access_token, payload)
+
+    // 토큰 만료 시 갱신 후 재시도
+    if (!success && user.kakao_refresh_token) {
+      const newToken = await refreshKakaoToken(user.kakao_refresh_token)
+      if (newToken) {
+        await sendKakaoMessage(newToken, payload)
+      }
+    }
+  } catch (e) {
+    console.error('[DisclosureAnalyze] 카카오톡 알림 실패:', e)
   }
 }
 
@@ -63,7 +109,7 @@ export async function POST(request: NextRequest) {
     await ensureSchema()
 
     const body = await request.json()
-    const { rcept_no, corp_name, report_nm, rcept_dt, corp_cls } = body
+    const { rcept_no, corp_name, report_nm, rcept_dt, corp_cls, stock_code, corp_code } = body
 
     if (!rcept_no || !corp_name || !report_nm) {
       return NextResponse.json({ success: false, error: '필수 파라미터 없음 (rcept_no, corp_name, report_nm)' }, { status: 400 })
@@ -75,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     const sql = getSql()
 
-    // 1. 로그인 유저의 기존 분석이 있으면 반환
+    // 1. 로그인 유저의 기존 분석이 있으면 반환 (알림 없이)
     if (userId) {
       const userMap = await getUserAnalyses(userId, [rcept_no])
       const existing = userMap.get(rcept_no)
@@ -106,6 +152,20 @@ export async function POST(request: NextRequest) {
     `
     if (globalExisting.length > 0) {
       const r = globalExisting[0] as any
+      // 글로벌 캐시 결과도 로그인 유저에게 저장 + 알림
+      if (userId) {
+        const analysis: AnalysisResult = {
+          sentiment: r.sentiment,
+          score: r.score,
+          summary: r.summary,
+          key_points: r.key_points ? JSON.parse(r.key_points) : [],
+          reasoning: r.reasoning || '',
+          affected_aspects: r.affected_aspects ? JSON.parse(r.affected_aspects) : [],
+        }
+        const dartUrl = getDartUrl(rcept_no)
+        await upsertUserAnalysis(userId, rcept_no, analysis, { corp_name, report_nm, rcept_dt, dart_url: dartUrl })
+        notifySelf(userId, { corp_name, report_nm, rcept_dt, rcept_no }, analysis)
+      }
       return NextResponse.json({
         success: true,
         cached: true,
@@ -138,9 +198,29 @@ export async function POST(request: NextRequest) {
       fullText,
     })
 
-    // 5. 로그인 유저면 카카오 계정에만 저장 (전체 공개 X)
+    // 5. 글로벌 disclosures 테이블에 분석 결과 반영 (전체 공개 피드용)
+    // disclosures 레코드가 이미 있으면 UPDATE, 없으면 INSERT 후 UPDATE
+    try {
+      const dartUrl = getDartUrl(rcept_no)
+      const exists = await sql`SELECT 1 FROM disclosures WHERE rcept_no = ${rcept_no}`
+      if (exists.length === 0 && corp_name && corp_code && report_nm && rcept_dt) {
+        // 폴러가 아직 수집하지 않은 공시 → 직접 삽입
+        await sql`
+          INSERT INTO disclosures (rcept_no, corp_name, corp_code, stock_code, report_nm, rcept_dt, corp_cls, dart_url)
+          VALUES (${rcept_no}, ${corp_name}, ${corp_code}, ${stock_code || null}, ${report_nm}, ${rcept_dt}, ${corp_cls || null}, ${dartUrl})
+          ON CONFLICT (rcept_no) DO NOTHING
+        `
+      }
+      await updateAnalysis(rcept_no, analysis)
+    } catch {
+      // 글로벌 저장 실패해도 개인 분석 결과는 반환
+    }
+
+    // 6. 로그인 유저면 개인 기록 저장 + 카카오톡 알림
     if (userId) {
-      await upsertUserAnalysis(userId, rcept_no, analysis)
+      const dartUrl = getDartUrl(rcept_no)
+      await upsertUserAnalysis(userId, rcept_no, analysis, { corp_name, report_nm, rcept_dt, dart_url: dartUrl })
+      notifySelf(userId, { corp_name, report_nm, rcept_dt, rcept_no }, analysis)
     }
 
     return NextResponse.json({ success: true, cached: false, analysis })

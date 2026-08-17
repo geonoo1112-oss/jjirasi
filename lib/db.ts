@@ -415,13 +415,23 @@ export async function upsertUserAnalysis(userId: number, rceptNo: string, analys
   key_points: string[]
   reasoning: string
   affected_aspects: string[]
+}, meta?: {
+  corp_name?: string
+  report_nm?: string
+  rcept_dt?: string
+  dart_url?: string
 }): Promise<void> {
   const sql = getSql()
+  const corp_name = meta?.corp_name || null
+  const report_nm = meta?.report_nm || null
+  const rcept_dt = meta?.rcept_dt || null
+  const dart_url = meta?.dart_url || null
   await sql`
-    INSERT INTO user_analyses (user_id, rcept_no, sentiment, score, summary, key_points, reasoning, affected_aspects, analyzed_at)
+    INSERT INTO user_analyses (user_id, rcept_no, sentiment, score, summary, key_points, reasoning, affected_aspects, analyzed_at, corp_name, report_nm, rcept_dt, dart_url)
     VALUES (${userId}, ${rceptNo}, ${analysis.sentiment}, ${analysis.score}, ${analysis.summary},
             ${JSON.stringify(analysis.key_points)}, ${analysis.reasoning},
-            ${JSON.stringify(analysis.affected_aspects)}, NOW())
+            ${JSON.stringify(analysis.affected_aspects)}, NOW(),
+            ${corp_name}, ${report_nm}, ${rcept_dt}, ${dart_url})
     ON CONFLICT (user_id, rcept_no) DO UPDATE SET
       sentiment = EXCLUDED.sentiment,
       score = EXCLUDED.score,
@@ -429,7 +439,11 @@ export async function upsertUserAnalysis(userId: number, rceptNo: string, analys
       key_points = EXCLUDED.key_points,
       reasoning = EXCLUDED.reasoning,
       affected_aspects = EXCLUDED.affected_aspects,
-      analyzed_at = NOW()
+      analyzed_at = NOW(),
+      corp_name = COALESCE(EXCLUDED.corp_name, user_analyses.corp_name),
+      report_nm = COALESCE(EXCLUDED.report_nm, user_analyses.report_nm),
+      rcept_dt = COALESCE(EXCLUDED.rcept_dt, user_analyses.rcept_dt),
+      dart_url = COALESCE(EXCLUDED.dart_url, user_analyses.dart_url)
   `
 }
 

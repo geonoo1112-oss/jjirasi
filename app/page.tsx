@@ -7,7 +7,7 @@ import {
   RefreshCw, TrendingUp, TrendingDown, Minus,
   ExternalLink, Search, BarChart3,
   AlertCircle, CheckCircle, Clock, LogOut, Bell,
-  X, ChevronRight, FileText, Building2, Sparkles, Download
+  X, ChevronRight, FileText, Building2, Sparkles, Download, BookOpen
 } from 'lucide-react'
 
 // ─── 타입 ────────────────────────────────────────────────────
@@ -639,6 +639,10 @@ function HomeContent() {
               {!userLoading && (
                 user ? (
                   <div className="flex items-center gap-2">
+                    <a href="/my" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors" title="내 분석 기록">
+                      <BookOpen size={13} className="text-slate-600" />
+                      <span className="text-xs font-medium text-slate-700 hidden sm:block">내 분석</span>
+                    </a>
                     <a href="/settings" className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors cursor-pointer">
                       <Bell size={13} className="text-yellow-600" />
                       <span className="text-xs font-medium text-slate-700 hidden sm:block">{user.nickname}</span>
