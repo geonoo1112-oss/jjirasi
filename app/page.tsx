@@ -73,16 +73,27 @@ function formatDate(dt: string) {
   return `${dt.slice(0, 4)}.${dt.slice(4, 6)}.${dt.slice(6, 8)}`
 }
 
+// ─── 강도 레이블 ──────────────────────────────────────────────
+
+function getStrengthLabel(score: number | null): string {
+  if (score === null || score === 0) return ''
+  const abs = Math.abs(score)
+  const strength = abs <= 30 ? '약한' : abs <= 60 ? '중간' : '강한'
+  const direction = score > 0 ? '호재' : '악재'
+  return `${strength} ${direction}`
+}
+
 // ─── 공통 컴포넌트 ────────────────────────────────────────────
 
 function SentimentBadge({ sentiment, score }: { sentiment: 'positive' | 'negative' | 'neutral'; score: number | null }) {
   const cfg = SENTIMENT_CONFIG[sentiment]
   const Icon = cfg.icon
   const scoreText = score !== null ? (score > 0 ? `+${score}` : String(score)) : ''
+  const displayLabel = getStrengthLabel(score) || cfg.label
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${cfg.badgeClass}`}>
       <Icon size={9} />
-      {cfg.label}
+      {displayLabel}
       {scoreText && <span className="opacity-80">{scoreText}</span>}
     </span>
   )
@@ -392,6 +403,7 @@ function ScoreBar({ score }: { score: number | null }) {
   if (score === null) return null
   const pct = Math.abs(score)
   const isPositive = score > 0
+  const label = getStrengthLabel(score)
   return (
     <div className="flex items-center gap-2 mt-1">
       <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
@@ -400,6 +412,11 @@ function ScoreBar({ score }: { score: number | null }) {
       <span className={`text-xs font-mono font-bold w-10 text-right ${isPositive ? 'text-green-600' : score < 0 ? 'text-red-600' : 'text-gray-500'}`}>
         {score > 0 ? '+' : ''}{score}
       </span>
+      {label && (
+        <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {label}
+        </span>
+      )}
     </div>
   )
 }
@@ -422,7 +439,7 @@ function DisclosureCard({ d, onCompanyClick }: { d: DisclosureView; onCompanyCli
               {d.stock_code && <span className="text-xs text-slate-400 font-mono">{d.stock_code}</span>}
               {config ? (
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${config.badgeClass}`}>
-                  <Icon size={10} />{config.label}
+                  <Icon size={10} />{getStrengthLabel(d.score) || config.label}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
@@ -501,10 +518,119 @@ function StatCard({ label, value, color, icon: Icon }: { label: string; value: n
   )
 }
 
+// ─── 내 분석 타입 ────────────────────────────────────────────
+
+interface MyAnalysis {
+  id: number
+  rcept_no: string
+  corp_name: string
+  report_nm: string
+  rcept_dt: string
+  dart_url: string
+  stock_code: string | null
+  sentiment: 'positive' | 'negative' | 'neutral' | null
+  score: number | null
+  summary: string | null
+  key_points: string[]
+  reasoning: string
+  affected_aspects: string[]
+  analyzed_at: string
+}
+
+// ─── 내 분석 카드 ─────────────────────────────────────────────
+
+function MyAnalysisCard({ item, onCompanyClick }: { item: MyAnalysis; onCompanyClick: (name: string, code: string) => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const config = item.sentiment ? SENTIMENT_CONFIG[item.sentiment] : null
+  const Icon = config?.icon || Clock
+  return (
+    <div className={`rounded-xl border bg-white shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden ${config?.cardClass || 'border-gray-200'}`}>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => onCompanyClick(item.corp_name, '')}
+                className="font-bold text-slate-900 text-sm hover:text-blue-700 hover:underline underline-offset-2 transition-colors text-left">
+                {item.corp_name}
+              </button>
+              {item.stock_code && <span className="text-xs text-slate-400 font-mono">{item.stock_code}</span>}
+              {config ? (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${config.badgeClass}`}>
+                  <Icon size={10} />{getStrengthLabel(item.score) || config.label}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                  <Clock size={10} />분석중
+                </span>
+              )}
+            </div>
+            <p className="text-slate-700 text-sm mt-1 line-clamp-2">{item.report_nm}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-xs text-slate-400">{formatDate(item.rcept_dt)}</p>
+              <span className="text-slate-300">·</span>
+              <p className="text-xs text-slate-400">분석: {new Date(item.analyzed_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+          </div>
+          <a href={item.dart_url} target="_blank" rel="noopener noreferrer"
+            className="shrink-0 p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="DART 원문 보기">
+            <ExternalLink size={14} />
+          </a>
+        </div>
+        {item.summary && (
+          <div className="mt-3">
+            <p className="text-sm font-medium text-slate-800">{item.summary}</p>
+            <ScoreBar score={item.score} />
+          </div>
+        )}
+        {item.key_points && item.key_points.length > 0 && (
+          <div className="mt-2">
+            <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+              {expanded ? '▲ 접기' : '▼ 상세 분석 보기'}
+            </button>
+            {expanded && (
+              <div className="mt-2 space-y-2 text-sm">
+                <div className="space-y-1">
+                  {item.key_points.map((p, i) => (
+                    <div key={i} className="flex gap-2"><span className="text-slate-400 shrink-0">•</span><span className="text-slate-700">{p}</span></div>
+                  ))}
+                </div>
+                {item.reasoning && (
+                  <div className="mt-2 pt-2 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 font-medium mb-1">판단 근거</p>
+                    <p className="text-xs text-slate-600 leading-relaxed">{item.reasoning}</p>
+                  </div>
+                )}
+                {item.affected_aspects && item.affected_aspects.length > 0 && (
+                  <div className="flex gap-1 flex-wrap mt-1">
+                    {item.affected_aspects.map((a, i) => (
+                      <span key={i} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{a}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="mt-3 pt-2 border-t border-slate-100">
+          <button onClick={() => onCompanyClick(item.corp_name, '')}
+            className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 transition-colors">
+            <FileText size={11} />{item.corp_name} 공시 이력 전체 보기<ChevronRight size={11} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── 메인 ────────────────────────────────────────────────────
 
 function HomeContent() {
+  const [pageTab, setPageTab] = useState<'global' | 'personal'>('global')
   const [disclosures, setDisclosures] = useState<DisclosureView[]>([])
+  const [myAnalyses, setMyAnalyses] = useState<MyAnalysis[]>([])
+  const [myTotal, setMyTotal] = useState(0)
+  const [myLoading, setMyLoading] = useState(false)
+  const [myFilter, setMyFilter] = useState<string>('all')
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [polling, setPolling] = useState(false)
@@ -552,11 +678,27 @@ function HomeContent() {
     finally { setLoading(false) }
   }, [sentiment, search])
 
+  const fetchMyAnalyses = useCallback(async () => {
+    if (!user) return
+    setMyLoading(true)
+    try {
+      const res = await fetch('/api/my-analyses?limit=100')
+      const data = await res.json()
+      if (data.success) { setMyAnalyses(data.analyses || []); setMyTotal(data.total || 0) }
+    } catch {}
+    finally { setMyLoading(false) }
+  }, [user])
+
   useEffect(() => {
     fetchData()
     const iv = setInterval(fetchData, 60000)
     return () => clearInterval(iv)
   }, [fetchData])
+
+  // 내 조회기록 탭 진입 시 데이터 로드
+  useEffect(() => {
+    if (pageTab === 'personal' && user) fetchMyAnalyses()
+  }, [pageTab, user, fetchMyAnalyses])
 
   function showMessage(type: 'success' | 'error', text: string) {
     setMessage({ type, text })
@@ -613,6 +755,24 @@ function HomeContent() {
     { key: 'neutral', label: '● 중립' },
   ]
 
+  const myStats = {
+    total: myAnalyses.length,
+    positive: myAnalyses.filter(a => a.sentiment === 'positive').length,
+    negative: myAnalyses.filter(a => a.sentiment === 'negative').length,
+    neutral: myAnalyses.filter(a => a.sentiment === 'neutral').length,
+  }
+
+  const MY_TABS = [
+    { key: 'all', label: `전체 (${myStats.total})` },
+    { key: 'positive', label: `호재 (${myStats.positive})` },
+    { key: 'negative', label: `악재 (${myStats.negative})` },
+    { key: 'neutral', label: `중립 (${myStats.neutral})` },
+  ]
+
+  const filteredMyAnalyses = myFilter === 'all'
+    ? myAnalyses
+    : myAnalyses.filter(a => a.sentiment === myFilter)
+
   const showDartHistoryHint = !loading && search && disclosures.length === 0
 
   return (
@@ -623,26 +783,32 @@ function HomeContent() {
 
       {/* 헤더 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-3">
+        {/* 상단 로고 + 버튼 */}
+        <div className="max-w-5xl mx-auto px-4 pt-3 pb-0">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="text-lg font-bold text-slate-900">📰 JJIRASI</h1>
               <p className="text-xs text-slate-500">DART 공시를 AI가 실시간 호재/악재 판단</p>
             </div>
             <div className="flex items-center gap-2">
-              {lastUpdated && <span className="text-xs text-slate-400 hidden sm:block">{lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 갱신</span>}
-              <button onClick={handlePoll} disabled={polling}
-                className="flex items-center gap-1.5 bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                <RefreshCw size={14} className={polling ? 'animate-spin' : ''} />
-                {polling ? '수집 중...' : '지금 수집'}
-              </button>
+              {lastUpdated && pageTab === 'global' && <span className="text-xs text-slate-400 hidden sm:block">{lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 갱신</span>}
+              {pageTab === 'global' && (
+                <button onClick={handlePoll} disabled={polling}
+                  className="flex items-center gap-1.5 bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  <RefreshCw size={14} className={polling ? 'animate-spin' : ''} />
+                  {polling ? '수집 중...' : '지금 수집'}
+                </button>
+              )}
+              {pageTab === 'personal' && user && (
+                <button onClick={fetchMyAnalyses} disabled={myLoading}
+                  className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                  <RefreshCw size={13} className={myLoading ? 'animate-spin' : ''} />
+                  <span className="hidden sm:block">새로고침</span>
+                </button>
+              )}
               {!userLoading && (
                 user ? (
                   <div className="flex items-center gap-2">
-                    <a href="/my" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors" title="내 분석 기록">
-                      <BookOpen size={13} className="text-slate-600" />
-                      <span className="text-xs font-medium text-slate-700 hidden sm:block">내 분석</span>
-                    </a>
                     <a href="/settings" className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors cursor-pointer">
                       <Bell size={13} className="text-yellow-600" />
                       <span className="text-xs font-medium text-slate-700 hidden sm:block">{user.nickname}</span>
@@ -662,6 +828,35 @@ function HomeContent() {
             </div>
           </div>
         </div>
+
+        {/* 탭 네비게이션 */}
+        <div className="max-w-5xl mx-auto px-4">
+          <div className="flex gap-0 mt-2">
+            <button
+              onClick={() => setPageTab('global')}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                pageTab === 'global'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              전체 조회 기록
+            </button>
+            <button
+              onClick={() => { setPageTab('personal'); if (!user) showMessage('error', '카카오 로그인 후 이용 가능합니다') }}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                pageTab === 'personal'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              내 조회기록
+              {myTotal > 0 && (
+                <span className="ml-1.5 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-semibold">{myTotal}</span>
+              )}
+            </button>
+          </div>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -672,70 +867,151 @@ function HomeContent() {
           </div>
         )}
 
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="오늘 공시" value={stats.todayCount} color="text-blue-600" icon={BarChart3} />
-            <StatCard label="호재" value={stats.positive} color="text-green-600" icon={TrendingUp} />
-            <StatCard label="악재" value={stats.negative} color="text-red-600" icon={TrendingDown} />
-            <StatCard label="분석 대기" value={stats.pending} color="text-amber-600" icon={Clock} />
-          </div>
-        )}
+        {/* ── 전체 조회 기록 탭 ── */}
+        {pageTab === 'global' && (
+          <>
+            {stats && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="오늘 공시" value={stats.todayCount} color="text-blue-600" icon={BarChart3} />
+                <StatCard label="호재" value={stats.positive} color="text-green-600" icon={TrendingUp} />
+                <StatCard label="악재" value={stats.negative} color="text-red-600" icon={TrendingDown} />
+                <StatCard label="분석 대기" value={stats.pending} color="text-amber-600" icon={Clock} />
+              </div>
+            )}
 
-        {/* 검색 + 필터 */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <CompanySearchBox
-            allCompanies={allCompanies}
-            onSelectCompany={handleSelectCompany}
-            onSearch={setSearch}
-            importingCompanies={importingCompanies}
-            onImportCompanies={handleImportCompanies}
-          />
-          <div className="flex gap-1">
-            {TABS.map(tab => (
-              <button key={tab.key} onClick={() => setSentiment(tab.key)}
-                className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${sentiment === tab.key ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 기업 데이터 안내 (처음 방문 시) */}
-        {allCompanies.length === 0 && !loading && (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
-            <Sparkles size={16} className="text-blue-500 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-blue-800">초성 검색을 활성화하려면 기업 데이터가 필요해요</p>
-              <p className="text-xs text-blue-600 mt-0.5">검색창 옆 "기업 데이터 가져오기" 버튼을 눌러 코스피·코스닥 전체 기업을 한 번만 받아오세요</p>
+            {/* 검색 + 필터 */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <CompanySearchBox
+                allCompanies={allCompanies}
+                onSelectCompany={handleSelectCompany}
+                onSearch={setSearch}
+                importingCompanies={importingCompanies}
+                onImportCompanies={handleImportCompanies}
+              />
+              <div className="flex gap-1">
+                {TABS.map(tab => (
+                  <button key={tab.key} onClick={() => setSentiment(tab.key)}
+                    className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${sentiment === tab.key ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+
+            {/* 기업 데이터 안내 (처음 방문 시) */}
+            {allCompanies.length === 0 && !loading && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+                <Sparkles size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-blue-800">초성 검색을 활성화하려면 기업 데이터가 필요해요</p>
+                  <p className="text-xs text-blue-600 mt-0.5">검색창 옆 "기업 데이터 가져오기" 버튼을 눌러 코스피·코스닥 전체 기업을 한 번만 받아오세요</p>
+                </div>
+              </div>
+            )}
+
+            {/* 검색 결과 없을 때 DART 직접 보기 */}
+            {showDartHistoryHint && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-sm text-blue-800 font-medium mb-2">"<span className="font-bold">{search}</span>" 관련 수집된 공시가 없습니다</p>
+                <p className="text-xs text-blue-600 mb-3">DART에서 이 기업의 전체 공시 이력을 직접 조회하거나 AI 분석할 수 있어요</p>
+                <button onClick={() => openCompanyModal(search, '')}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                  <FileText size={14} />{search} DART 공시 이력 전체 보기<ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* 공시 목록 */}
+            {loading ? (
+              <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-white rounded-xl border border-gray-200 animate-pulse" />)}</div>
+            ) : disclosures.length === 0 && !search ? (
+              <div className="text-center py-20 text-slate-500">
+                <BarChart3 size={48} className="mx-auto mb-3 opacity-30" />
+                <p className="font-medium">공시가 없습니다</p>
+                <p className="text-sm mt-1">상단의 "지금 수집" 버튼을 눌러 DART에서 최신 공시를 가져오세요</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {disclosures.map(d => <DisclosureCard key={d.rcept_no} d={d} onCompanyClick={openCompanyModal} />)}
+              </div>
+            )}
+          </>
         )}
 
-        {/* 검색 결과 없을 때 DART 직접 보기 */}
-        {showDartHistoryHint && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="text-sm text-blue-800 font-medium mb-2">"<span className="font-bold">{search}</span>" 관련 수집된 공시가 없습니다</p>
-            <p className="text-xs text-blue-600 mb-3">DART에서 이 기업의 전체 공시 이력을 직접 조회하거나 AI 분석할 수 있어요</p>
-            <button onClick={() => openCompanyModal(search, '')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
-              <FileText size={14} />{search} DART 공시 이력 전체 보기<ChevronRight size={14} />
-            </button>
-          </div>
-        )}
+        {/* ── 내 조회기록 탭 ── */}
+        {pageTab === 'personal' && (
+          <>
+            {/* 로그인 안내 */}
+            {!userLoading && !user && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
+                <Bell size={32} className="text-yellow-500 mx-auto mb-3" />
+                <p className="text-slate-800 font-semibold mb-2">카카오 로그인이 필요합니다</p>
+                <p className="text-sm text-slate-500 mb-4">로그인 후 내가 AI 분석한 공시 목록을 확인할 수 있어요</p>
+                <a href="/api/auth/kakao"
+                  className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-semibold px-4 py-2 rounded-lg transition-colors">
+                  <span>💬</span> 카카오로 로그인
+                </a>
+              </div>
+            )}
 
-        {/* 공시 목록 */}
-        {loading ? (
-          <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-24 bg-white rounded-xl border border-gray-200 animate-pulse" />)}</div>
-        ) : disclosures.length === 0 && !search ? (
-          <div className="text-center py-20 text-slate-500">
-            <BarChart3 size={48} className="mx-auto mb-3 opacity-30" />
-            <p className="font-medium">공시가 없습니다</p>
-            <p className="text-sm mt-1">상단의 "지금 수집" 버튼을 눌러 DART에서 최신 공시를 가져오세요</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {disclosures.map(d => <DisclosureCard key={d.rcept_no} d={d} onCompanyClick={openCompanyModal} />)}
-          </div>
+            {/* 데이터 로딩 */}
+            {user && myLoading && (
+              <div className="flex justify-center py-10">
+                <RefreshCw size={20} className="animate-spin text-slate-400" />
+              </div>
+            )}
+
+            {/* 분석 기록 있을 때 */}
+            {user && !myLoading && (
+              <>
+                {myAnalyses.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+                    <BookOpen size={32} className="text-slate-300 mx-auto mb-3" />
+                    <p className="text-slate-500 text-sm">아직 분석한 공시가 없어요</p>
+                    <p className="text-slate-400 text-xs mt-1">기업 공시 이력에서 AI 분석 버튼을 눌러 분석을 시작해보세요</p>
+                    <button
+                      onClick={() => setPageTab('global')}
+                      className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      전체 공시 보러 가기
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* 감성 필터 탭 */}
+                    <div className="flex gap-1 flex-wrap">
+                      {MY_TABS.map(tab => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setMyFilter(tab.key)}
+                          className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                            myFilter === tab.key
+                              ? 'bg-slate-800 text-white'
+                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 카드 목록 */}
+                    <div className="space-y-3">
+                      {filteredMyAnalyses.length === 0 ? (
+                        <div className="text-center py-8 text-sm text-slate-400">
+                          해당 유형의 분석 기록이 없어요
+                        </div>
+                      ) : (
+                        filteredMyAnalyses.map(item => (
+                          <MyAnalysisCard key={item.id} item={item} onCompanyClick={openCompanyModal} />
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </>
         )}
 
         <div className="text-center text-xs text-slate-400 py-4 border-t border-slate-200">
