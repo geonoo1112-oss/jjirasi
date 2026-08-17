@@ -944,7 +944,7 @@ function HomeContent() {
         <div className="max-w-5xl mx-auto px-4 pt-3 pb-0">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <img src="/logo.svg" alt="JJIRASI" className="w-9 h-9 object-contain" />
+              <img src="/logo.png" alt="JJIRASI" className="w-9 h-9 object-contain" />
               <div>
                 <h1 className="text-lg font-bold text-slate-900">JJIRASI</h1>
                 <p className="text-xs text-slate-500">DART 공시를 AI가 실시간 호재/악재 판단</p>
