@@ -1,6 +1,6 @@
 /**
  * 분석 인기 기업 랭킹 API
- * user_analyses 기준으로 기간별 가장 많이 분석 요청된 기업 TOP 10
+ * disclosures 기준으로 기간별 가장 많이 공시된 기업 TOP 10
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
@@ -15,23 +15,27 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period') || 'today'
-    const days = period === 'month' ? 30 : period === 'week' ? 7 : 1
+
+    // rcept_dt는 YYYYMMDD 형식의 문자열
+    // 오늘 하루: 당일 날짜와 같은 것만
+    // 일주일: 오늘 포함 7일
+    // 한달: 오늘 포함 30일
+    const daysBack = period === 'month' ? 29 : period === 'week' ? 6 : 0
 
     const sql = getSql()
 
     const rows = await sql`
       SELECT
-        COALESCE(ua.corp_name, d.corp_name) AS corp_name,
-        MAX(d.stock_code)                    AS stock_code,
-        COUNT(*)::int                        AS total,
-        COUNT(CASE WHEN ua.sentiment = 'positive' THEN 1 END)::int AS positive_count,
-        COUNT(CASE WHEN ua.sentiment = 'negative' THEN 1 END)::int AS negative_count,
-        COUNT(CASE WHEN ua.sentiment = 'neutral'  THEN 1 END)::int AS neutral_count
-      FROM user_analyses ua
-      LEFT JOIN disclosures d ON ua.rcept_no = d.rcept_no
-      WHERE ua.analyzed_at >= NOW() - (${days} * INTERVAL '1 day')
-        AND COALESCE(ua.corp_name, d.corp_name) IS NOT NULL
-      GROUP BY COALESCE(ua.corp_name, d.corp_name)
+        corp_name,
+        MAX(stock_code) AS stock_code,
+        COUNT(*)::int   AS total,
+        COUNT(CASE WHEN sentiment = 'positive' THEN 1 END)::int AS positive_count,
+        COUNT(CASE WHEN sentiment = 'negative' THEN 1 END)::int AS negative_count,
+        COUNT(CASE WHEN sentiment = 'neutral'  THEN 1 END)::int AS neutral_count
+      FROM disclosures
+      WHERE corp_name IS NOT NULL
+        AND rcept_dt >= TO_CHAR(CURRENT_DATE - (${daysBack} * INTERVAL '1 day'), 'YYYYMMDD')
+      GROUP BY corp_name
       ORDER BY total DESC
       LIMIT 10
     `
