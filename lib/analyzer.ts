@@ -1,16 +1,16 @@
 /**
- * AI 공시 분석 모듈 (OpenAI API 사용)
+ * AI 공시 분석 모듈 (Anthropic Claude API 사용)
  * - 최대 3회 재시도
  * - 타임아웃 설정
  */
 
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { AnalysisResult } from '@/types'
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
   timeout: 30000, // 30초 타임아웃
-  maxRetries: 2,  // OpenAI SDK 레벨 재시도
+  maxRetries: 2,  // SDK 레벨 재시도
 })
 
 const ANALYSIS_PROMPT = `당신은 한국 주식시장 전문 애널리스트입니다.
@@ -59,20 +59,24 @@ ${disclosure.fullText ? `\n공시 본문 (일부):\n${disclosure.fullText.slice(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const message = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const message = await client.messages.create({
+        model: 'claude-haiku-4-5',
         max_tokens: 1024,
-        response_format: { type: 'json_object' },
+        system: ANALYSIS_PROMPT,
         messages: [
-          { role: 'system', content: ANALYSIS_PROMPT },
           { role: 'user', content: userMessage }
         ],
       })
 
-      const content = message.choices[0].message.content
-      if (!content) throw new Error('OpenAI 빈 응답')
+      const content = message.content[0]
+      if (!content || content.type !== 'text') throw new Error('Claude 빈 응답')
 
-      const result = JSON.parse(content.trim()) as AnalysisResult
+      // JSON 블록 추출 (마크다운 코드블록 제거)
+      const raw = content.text.trim()
+      const jsonMatch = raw.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('JSON을 찾을 수 없음')
+
+      const result = JSON.parse(jsonMatch[0]) as AnalysisResult
 
       if (!['positive', 'negative', 'neutral'].includes(result.sentiment)) {
         throw new Error(`유효하지 않은 sentiment: ${result.sentiment}`)
@@ -92,7 +96,6 @@ ${disclosure.fullText ? `\n공시 본문 (일부):\n${disclosure.fullText.slice(
       console.error(`[Analyzer] ${disclosure.corpName} - ${disclosure.reportNm} 시도 ${attempt}/${MAX_RETRIES} 실패:`, error)
 
       if (attempt < MAX_RETRIES) {
-        // 재시도 전 대기 (1초, 2초, ...)
         await new Promise(r => setTimeout(r, 1000 * attempt))
       }
     }

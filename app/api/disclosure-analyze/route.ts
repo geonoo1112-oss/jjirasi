@@ -55,8 +55,8 @@ async function ensureSchema() {
 
 export async function POST(request: NextRequest) {
   try {
-    // OPENAI_API_KEY 미설정 시 즉시 명확한 에러 반환 (3회 타임아웃 방지)
-    if (!process.env.OPENAI_API_KEY) {
+    // ANTHROPIC_API_KEY 미설정 시 즉시 명확한 에러 반환 (3회 타임아웃 방지)
+    if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json({ success: false, error: 'AI 분석 서비스가 현재 설정되지 않았습니다. 관리자에게 문의하세요.' }, { status: 503 })
     }
 
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     const msg = error?.message || String(error)
     console.error('[DisclosureAnalyze]', msg)
     // 인증 오류 → API 키 문제
-    if (msg.includes('401') || msg.includes('Incorrect API key') || msg.includes('invalid_api_key')) {
+    if (msg.includes('401') || msg.includes('authentication') || msg.includes('invalid x-api-key') || msg.includes('API key')) {
       return NextResponse.json({ success: false, error: 'AI 분석 서비스 인증 오류입니다. API 키를 확인해주세요.' }, { status: 503 })
     }
     // 타임아웃
