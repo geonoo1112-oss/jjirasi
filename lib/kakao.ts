@@ -102,9 +102,18 @@ const SENTIMENT_LABEL = {
   neutral: '중립',
 }
 
+// 점수와 감성으로 강도 레이블 반환
+function getStrengthLabel(score: number, sentiment: 'positive' | 'negative' | 'neutral'): string {
+  const abs = Math.abs(score)
+  const strength = abs <= 30 ? '약한' : abs <= 60 ? '중간' : '강한'
+  const direction = sentiment === 'positive' ? '호재' : sentiment === 'negative' ? '악재' : '중립'
+  return `${strength} ${direction}`
+}
+
 /**
  * 단일 유저에게 카카오톡 메시지 전송
  * "나에게 보내기" API 사용 (별도 채널 필요 없음)
+ * 중간/강한 호재만 전송 — 세부 내용은 사이트에서 확인
  */
 export async function sendKakaoMessage(
   accessToken: string,
@@ -113,47 +122,34 @@ export async function sendKakaoMessage(
     report_nm: string
     sentiment: 'positive' | 'negative' | 'neutral'
     score: number
-    summary: string
-    key_points: string[]
     dart_url: string
     rcept_dt: string
   }
 ): Promise<boolean> {
-  const emoji = SENTIMENT_EMOJI[disclosure.sentiment]
-  const label = SENTIMENT_LABEL[disclosure.sentiment]
-  const scoreText = disclosure.score > 0 ? `+${disclosure.score}` : String(disclosure.score)
-
-  // 핵심 포인트 (최대 2개)
-  const points = disclosure.key_points.slice(0, 2).map(p => `• ${p}`).join('\n')
+  const strengthLabel = getStrengthLabel(disclosure.score, disclosure.sentiment)
+  const emoji = disclosure.sentiment === 'positive' ? '📈' : disclosure.sentiment === 'negative' ? '📉' : '➖'
+  const dateStr = `${disclosure.rcept_dt.slice(0, 4)}.${disclosure.rcept_dt.slice(4, 6)}.${disclosure.rcept_dt.slice(6, 8)}`
+  const deepLink = `https://jjirasi.co.kr/?company=${encodeURIComponent(disclosure.corp_name)}`
 
   const message = {
     object_type: 'feed',
     content: {
-      title: `${emoji} [${label}] ${disclosure.corp_name}`,
-      description: `${disclosure.report_nm}\n\n${disclosure.summary}\n\n${points}`,
-      image_url: 'https://opendart.fss.or.kr/images/common/logo.png',
-      image_width: 120,
-      image_height: 48,
+      title: `[${strengthLabel}] ${disclosure.corp_name}`,
+      description: `${disclosure.report_nm}\n\njjirasi.co.kr에서 판단 근거 확인`,
       link: {
-        web_url: disclosure.dart_url,
-        mobile_web_url: disclosure.dart_url,
+        web_url: deepLink,
+        mobile_web_url: deepLink,
       },
     },
     buttons: [
       {
-        title: 'DART 원문 보기',
+        title: '판단 근거 확인하기',
         link: {
-          web_url: disclosure.dart_url,
-          mobile_web_url: disclosure.dart_url,
+          web_url: deepLink,
+          mobile_web_url: deepLink,
         },
       },
     ],
-    item_content: {
-      items: [
-        { item: '분석 점수', item_op: scoreText },
-        { item: '공시 일자', item_op: `${disclosure.rcept_dt.slice(0, 4)}.${disclosure.rcept_dt.slice(4, 6)}.${disclosure.rcept_dt.slice(6, 8)}` },
-      ],
-    },
   }
 
   try {
@@ -180,6 +176,7 @@ export async function sendKakaoMessage(
 
 /**
  * 분석 완료된 공시를 구독 유저 전체에게 알림 전송
+ * 호재/악재 모든 강도 발송 — 내용은 강도 레이블만, 세부 분석은 사이트에서 확인
  */
 export async function notifySubscribers(disclosure: DisclosureRecord & {
   key_points: string[]
@@ -205,8 +202,6 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
         report_nm: disclosure.report_nm,
         sentiment: disclosure.sentiment as any,
         score: disclosure.score,
-        summary: disclosure.summary || '',
-        key_points: disclosure.key_points || [],
         dart_url: disclosure.dart_url,
         rcept_dt: disclosure.rcept_dt,
       })
@@ -232,8 +227,6 @@ export async function notifySubscribers(disclosure: DisclosureRecord & {
               report_nm: disclosure.report_nm,
               sentiment: disclosure.sentiment as any,
               score: disclosure.score,
-              summary: disclosure.summary || '',
-              key_points: disclosure.key_points || [],
               dart_url: disclosure.dart_url,
               rcept_dt: disclosure.rcept_dt,
             })

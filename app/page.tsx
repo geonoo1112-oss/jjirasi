@@ -820,6 +820,14 @@ function HomeContent() {
     if (err) showMessage('error', '로그인에 실패했습니다. 다시 시도해주세요.')
   }, [searchParams])
 
+  // 카카오 알림 딥링크: ?company=기업명 → 해당 기업 모달 자동 오픈
+  useEffect(() => {
+    const companyParam = searchParams.get('company')
+    if (companyParam) {
+      setCompanyModal({ name: decodeURIComponent(companyParam), code: '' })
+    }
+  }, [searchParams])
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {

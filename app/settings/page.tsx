@@ -331,7 +331,7 @@ export default function SettingsPage() {
 
         {/* 기업 검색 + 추가 */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-          <h2 className="font-bold text-slate-900">기업 추가</h2>
+          <h2 className="font-bold text-slate-900">구독 기업 추가</h2>
 
           {/* 시가총액 필터 */}
           <div className="flex gap-2 flex-wrap">
