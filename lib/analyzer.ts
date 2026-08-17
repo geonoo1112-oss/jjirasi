@@ -1,6 +1,7 @@
 /**
  * AI 공시 분석 모듈 (OpenAI API 사용)
- * 공시 내용을 받아서 호재/악재/중립 판단 및 상세 분석 제공
+ * - 최대 3회 재시도
+ * - 타임아웃 설정
  */
 
 import OpenAI from 'openai'
@@ -8,6 +9,8 @@ import { AnalysisResult } from '@/types'
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  timeout: 30000, // 30초 타임아웃
+  maxRetries: 2,  // OpenAI SDK 레벨 재시도
 })
 
 const ANALYSIS_PROMPT = `당신은 한국 주식시장 전문 애널리스트입니다.
@@ -26,83 +29,79 @@ const ANALYSIS_PROMPT = `당신은 한국 주식시장 전문 애널리스트입
   "summary": "<15자 이내 한 줄 요약>",
   "key_points": ["<핵심 포인트 1>", "<핵심 포인트 2>", "<핵심 포인트 3>"],
   "reasoning": "<판단 근거 2~3문장>",
-  "affected_aspects": ["<영향 받는 측면>"] // 실적, 재무구조, 사업확장, 지배구조, 투자심리 중 해당 항목
+  "affected_aspects": ["<영향 받는 측면>"]
 }`
 
 interface DisclosureInput {
   corpName: string
   reportNm: string
   rceptDt: string
-  corpCls: string   // Y:유가증권, K:코스닥
+  corpCls: string
   fullText?: string | null
 }
 
 /**
- * 공시 하나를 AI로 분석
+ * 공시 하나를 AI로 분석 (최대 3회 재시도, 실패 시 throw)
  */
 export async function analyzeDisclosure(disclosure: DisclosureInput): Promise<AnalysisResult> {
   const corpType = disclosure.corpCls === 'Y' ? '유가증권시장(코스피)'
                  : disclosure.corpCls === 'K' ? '코스닥'
                  : '기타'
 
-  const userMessage = `
-기업명: ${disclosure.corpName}
+  const userMessage = `기업명: ${disclosure.corpName}
 시장: ${corpType}
 공시 제목: ${disclosure.reportNm}
 공시 날짜: ${disclosure.rceptDt}
-${disclosure.fullText ? `\n공시 본문 (일부):\n${disclosure.fullText}` : ''}
-`.trim()
+${disclosure.fullText ? `\n공시 본문 (일부):\n${disclosure.fullText.slice(0, 2000)}` : ''}`.trim()
 
-  try {
-    const message = await client.chat.completions.create({
-      model: 'gpt-4o-mini',  // 저렴하고 빠름. 더 정확하게 하려면 'gpt-4o'로 변경
-      max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: ANALYSIS_PROMPT },
-        { role: 'user', content: userMessage }
-      ],
-    })
+  const MAX_RETRIES = 3
+  let lastError: unknown
 
-    const content = message.choices[0].message.content
-    if (!content) throw new Error('빈 응답')
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const message = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: ANALYSIS_PROMPT },
+          { role: 'user', content: userMessage }
+        ],
+      })
 
-    // JSON 파싱
-    const jsonText = content.trim()
-    const result = JSON.parse(jsonText) as AnalysisResult
+      const content = message.choices[0].message.content
+      if (!content) throw new Error('OpenAI 빈 응답')
 
-    // 유효성 검사
-    if (!['positive', 'negative', 'neutral'].includes(result.sentiment)) {
-      throw new Error('유효하지 않은 sentiment 값')
-    }
+      const result = JSON.parse(content.trim()) as AnalysisResult
 
-    return {
-      sentiment: result.sentiment,
-      score: Math.max(-100, Math.min(100, result.score)),
-      summary: result.summary || '분석 완료',
-      key_points: Array.isArray(result.key_points) ? result.key_points.slice(0, 3) : [],
-      reasoning: result.reasoning || '',
-      affected_aspects: Array.isArray(result.affected_aspects) ? result.affected_aspects : [],
-    }
+      if (!['positive', 'negative', 'neutral'].includes(result.sentiment)) {
+        throw new Error(`유효하지 않은 sentiment: ${result.sentiment}`)
+      }
 
-  } catch (error) {
-    console.error('AI 분석 실패:', error)
+      return {
+        sentiment: result.sentiment,
+        score: Math.max(-100, Math.min(100, result.score ?? 0)),
+        summary: result.summary || '분석 완료',
+        key_points: Array.isArray(result.key_points) ? result.key_points.slice(0, 3) : [],
+        reasoning: result.reasoning || '',
+        affected_aspects: Array.isArray(result.affected_aspects) ? result.affected_aspects : [],
+      }
 
-    // 폴백: 기본값 반환
-    return {
-      sentiment: 'neutral',
-      score: 0,
-      summary: '분석 실패',
-      key_points: ['AI 분석 중 오류가 발생했습니다'],
-      reasoning: String(error),
-      affected_aspects: [],
+    } catch (error) {
+      lastError = error
+      console.error(`[Analyzer] ${disclosure.corpName} - ${disclosure.reportNm} 시도 ${attempt}/${MAX_RETRIES} 실패:`, error)
+
+      if (attempt < MAX_RETRIES) {
+        // 재시도 전 대기 (1초, 2초, ...)
+        await new Promise(r => setTimeout(r, 1000 * attempt))
+      }
     }
   }
+
+  // 3회 모두 실패 → throw (호출자가 처리)
+  throw lastError
 }
 
-/**
- * 여러 공시를 배치로 분석 (API 레이트 리밋 고려)
- */
 export async function analyzeBatch(
   disclosures: DisclosureInput[],
   delayMs = 500
@@ -113,7 +112,6 @@ export async function analyzeBatch(
     const result = await analyzeDisclosure(disclosure)
     results.push(result)
 
-    // API 레이트 리밋 방지를 위한 딜레이
     if (disclosures.indexOf(disclosure) < disclosures.length - 1) {
       await new Promise(resolve => setTimeout(resolve, delayMs))
     }

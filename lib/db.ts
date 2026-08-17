@@ -405,3 +405,41 @@ export async function recordNotification(userId: number, rceptNo: string, status
     ON CONFLICT (user_id, rcept_no) DO NOTHING
   `
 }
+
+// ─── 유저별 AI 분석 ───────────────────────────────────────
+
+export async function upsertUserAnalysis(userId: number, rceptNo: string, analysis: {
+  sentiment: string
+  score: number
+  summary: string
+  key_points: string[]
+  reasoning: string
+  affected_aspects: string[]
+}): Promise<void> {
+  const sql = getSql()
+  await sql`
+    INSERT INTO user_analyses (user_id, rcept_no, sentiment, score, summary, key_points, reasoning, affected_aspects, analyzed_at)
+    VALUES (${userId}, ${rceptNo}, ${analysis.sentiment}, ${analysis.score}, ${analysis.summary},
+            ${JSON.stringify(analysis.key_points)}, ${analysis.reasoning},
+            ${JSON.stringify(analysis.affected_aspects)}, NOW())
+    ON CONFLICT (user_id, rcept_no) DO UPDATE SET
+      sentiment = EXCLUDED.sentiment,
+      score = EXCLUDED.score,
+      summary = EXCLUDED.summary,
+      key_points = EXCLUDED.key_points,
+      reasoning = EXCLUDED.reasoning,
+      affected_aspects = EXCLUDED.affected_aspects,
+      analyzed_at = NOW()
+  `
+}
+
+export async function getUserAnalyses(userId: number, rceptNos: string[]): Promise<Map<string, any>> {
+  if (!rceptNos.length) return new Map()
+  const sql = getSql()
+  const rows = await sql`
+    SELECT rcept_no, sentiment, score, summary, key_points, reasoning, affected_aspects
+    FROM user_analyses
+    WHERE user_id = ${userId} AND rcept_no = ANY(${rceptNos})
+  `
+  return new Map((rows as any[]).map(r => [r.rcept_no as string, r]))
+}

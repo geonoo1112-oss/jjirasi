@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { neon } from '@neondatabase/serverless'
 import { fetchDisclosures, getDartUrl } from '@/lib/dart'
+import { getUserAnalyses } from '@/lib/db'
 import axios from 'axios'
 
 function getSql() {
@@ -26,20 +28,15 @@ function fmtDate(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
 }
 
-/**
- * DART API에서 최근 공시를 검색해 기업명으로 corp_code 찾기
- * (companies 테이블이 비어있을 때 폴백)
- */
 async function discoverCorpCodeFromDart(name: string): Promise<{ corp_code: string; corp_name: string; stock_code: string } | null> {
   const apiKey = process.env.DART_API_KEY
   if (!apiKey) return null
 
   const end = new Date()
   const start = new Date()
-  start.setMonth(start.getMonth() - 1) // 최근 1개월 내 공시에서 검색
+  start.setMonth(start.getMonth() - 1)
 
   try {
-    // 최근 공시 최대 200건 가져와서 기업명 매칭
     const [r1, r2] = await Promise.allSettled([
       axios.get('https://opendart.fss.or.kr/api/list.json', {
         params: { crtfc_key: apiKey, bgn_de: fmtDate(start), end_de: fmtDate(end), page_no: 1, page_count: 100, sort: 'date', sort_mth: 'desc' },
@@ -54,7 +51,6 @@ async function discoverCorpCodeFromDart(name: string): Promise<{ corp_code: stri
       ...(r2.status === 'fulfilled' && r2.value.data.status === '000' ? r2.value.data.list : []),
     ]
 
-    // 정확한 이름 매칭 우선, 없으면 부분 매칭
     const exact = list.find((d: any) => d.corp_name === name)
     const partial = list.find((d: any) => d.corp_name?.includes(name) || name.includes(d.corp_name))
     const match = exact || partial
@@ -74,6 +70,10 @@ export async function GET(request: NextRequest) {
   const name = searchParams.get('name') || ''
   const corpCodeParam = searchParams.get('corp_code') || ''
   const months = Math.min(parseInt(searchParams.get('months') || '3'), 24)
+
+  // 로그인 유저 확인
+  const userIdStr = cookies().get('user_id')?.value
+  const userId = userIdStr ? parseInt(userIdStr) : null
 
   try {
     const sql = getSql()
@@ -132,13 +132,11 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // 3. DART API에서 해당 기업의 공시 목록 가져오기
+    // 4. DART API에서 해당 기업의 공시 목록 가져오기 (page 1만 - 중복 방지)
     const { bgn_de, end_de } = getDateRange(months)
-
-    // 기업별 조회는 page 1만 (최대 100건) - 다중 페이지 시 DART가 동일 데이터를 반복 반환하는 버그 방지
     const page1Result = await fetchDisclosures({ corpCode, startDate: bgn_de, endDate: end_de, page: 1, pageCount: 100 })
 
-    // rcept_no 기준 중복 제거 (DART API 응답 중복 방어)
+    // rcept_no 기준 중복 제거
     const seenRceptNo = new Set<string>()
     const dartDisclosures = page1Result.filter(d => {
       if (seenRceptNo.has(d.rcept_no)) return false
@@ -146,18 +144,27 @@ export async function GET(request: NextRequest) {
       return true
     })
 
-    // 4. 로컬 DB의 분석 결과 가져오기
+    // 5. 글로벌 DB 분석 결과 가져오기 (폴러가 분석한 것, 분석 실패 제외)
     const localRows = await sql`
       SELECT rcept_no, sentiment, score, summary, key_points, analyzed_at
       FROM disclosures
       WHERE corp_code = ${corpCode}
+        AND analyzed_at IS NOT NULL
+        AND summary IS NOT NULL
+        AND summary != '분석 실패'
       ORDER BY rcept_dt DESC
     `
-    const localMap = new Map(localRows.map((r: any) => [r.rcept_no as string, r]))
+    const globalMap = new Map(localRows.map((r: any) => [r.rcept_no as string, r]))
 
-    // 5. DART 공시 목록 + 로컬 분석 결과 병합
+    // 6. 로그인 유저의 개인 분석 결과 가져오기 (전체 공개 X)
+    const rceptNos = dartDisclosures.map(d => d.rcept_no)
+    const userMap = userId ? await getUserAnalyses(userId, rceptNos) : new Map()
+
+    // 7. 병합: 유저 분석 > 글로벌 분석 순 우선
     const merged = dartDisclosures.map(d => {
-      const local = localMap.get(d.rcept_no) as any
+      const user = userMap.get(d.rcept_no) as any
+      const global = globalMap.get(d.rcept_no) as any
+      const analysis = user || global // 유저 분석 우선
       return {
         rcept_no: d.rcept_no,
         corp_name: d.corp_name || companyName,
@@ -167,15 +174,15 @@ export async function GET(request: NextRequest) {
         rcept_dt: d.rcept_dt,
         flr_nm: d.flr_nm,
         dart_url: getDartUrl(d.rcept_no),
-        sentiment: local?.sentiment || null,
-        score: local?.score ?? null,
-        summary: local?.summary || null,
-        key_points: local?.key_points ? JSON.parse(local.key_points) : [],
-        analyzed: !!local?.analyzed_at,
+        sentiment: analysis?.sentiment || null,
+        score: analysis?.score ?? null,
+        summary: analysis?.summary || null,
+        key_points: analysis?.key_points ? JSON.parse(analysis.key_points) : [],
+        analyzed: !!analysis,
+        analyzed_by_user: !!user, // 유저가 직접 분석한 것 표시
       }
     })
 
-    // 날짜 내림차순 정렬
     merged.sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt))
 
     return NextResponse.json({

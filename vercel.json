@@ -1,1 +1,8 @@
-{"crons":[{"path":"/api/cron/poll","schedule":"0 9 * * *"}]} 
+{
+  "crons": [{"path": "/api/cron/poll", "schedule": "0 9 * * *"}],
+  "functions": {
+    "app/api/cron/poll/route.ts": {"maxDuration": 60},
+    "app/api/disclosure-analyze/route.ts": {"maxDuration": 60},
+    "app/api/trigger-poll/route.ts": {"maxDuration": 60}
+  }
+}
