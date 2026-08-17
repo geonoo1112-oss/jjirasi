@@ -443,3 +443,20 @@ export async function getUserAnalyses(userId: number, rceptNos: string[]): Promi
   `
   return new Map((rows as any[]).map(r => [r.rcept_no as string, r]))
 }
+
+// ─── 분석 실패 재시도 ───────────────────────────────────────
+
+/**
+ * summary = '분석 실패'인 레코드를 analyzed_at = NULL로 초기화하여
+ * 다음 폴링 사이클에서 재분석 대기열에 들어가도록 함
+ */
+export async function resetFailedAnalyses(): Promise<number> {
+  const sql = getSql()
+  const rows = await sql`
+    UPDATE disclosures
+    SET analyzed_at = NULL, summary = NULL, sentiment = NULL, score = NULL
+    WHERE summary = '분석 실패'
+    RETURNING rcept_no
+  `
+  return rows.length
+}
